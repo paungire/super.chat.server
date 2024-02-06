@@ -7,13 +7,13 @@
 		"dev": "nodemon index",
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
+	"type": "module",
 	"author": "",
 	"license": "ISC",
-	"type": "module",
 	"dependencies": {
 		"cors": "^2.8.5",
 		"express": "^4.18.2",
-		"mysql2": "^3.9.1",
+		"mysql2": "^3.0.0",
 		"nodemailer": "^6.9.8",
 		"nodemon": "^3.0.3",
 		"redis": "^4.6.12"
