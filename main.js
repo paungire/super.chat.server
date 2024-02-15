@@ -1,12 +1,40 @@
 import express, { json } from 'express'
+import parseurl from 'parseurl'
 const app = express()
-const port = 80
+const port = 3111
 
 import * as fs from 'fs'
 
 //* политика CORS
 import cors from 'cors'
 app.use(cors())
+app.all('/*', function (req, res, next) {
+	res.header('Access-Control-Allow-Origin', '*')
+	res.header('Access-Control-Allow-Headers', 'X-Requested-With')
+	next()
+})
+
+//* REDIS SESSIONS
+import RedisStore from 'connect-redis'
+import session from 'express-session'
+import { createClient } from 'redis'
+// Initialize client.
+let redisClient = createClient()
+redisClient.connect().catch(console.error)
+// Initialize store.
+let redisStore = new RedisStore({
+	client: redisClient,
+	prefix: 'myapp:',
+})
+// Initialize session storage.
+app.use(
+	session({
+		store: redisStore,
+		resave: false, // required: force lightweight session keep alive (touch)
+		saveUninitialized: false, // recommended: only save session when data exists
+		secret: 'keyboard cat',
+	})
+)
 
 //* отправка почты
 import { createTransport } from 'nodemailer'
@@ -31,12 +59,12 @@ const connection = createConnection({
 	password: '10101011',
 })
 
-app.post('/register/', (req, res) => {
+app.post('/api/register/', (req, res) => {
 	const email = req.body.email
 	const password = req.body.password
 	if (!email || !password) {
 		res.send({
-			error: [],
+			error: ['email', 'password'],
 			error_log: 'не заполнены обязательные поля',
 		})
 		return 0
@@ -83,6 +111,11 @@ app.post('/register/', (req, res) => {
 								console.log(err)
 								return
 							}
+							req.session.user = {
+								email: email,
+								code: random_code,
+							}
+							req.session.save()
 							res.send({
 								success: true,
 								log: [
@@ -105,22 +138,77 @@ app.post('/register/', (req, res) => {
 	})
 })
 
-// const createClient = require('redis')
-// const client = createClient()
-// 	.on('error', (err) => console.log('Redis Client Error', err))
-// 	.connect()
-
-// client.set('key', 'value')
-// const value = client.get('key')
-// console.log(value)
-// client.disconnect()
-
-app.post('/confirm/', (req, res) => {
-	req.body.code
+app.post('/api/confirm/', (req, res) => {
+	if (req.body.code == req.session.user.code) {
+		let sql =
+			'UPDATE users SET active = 1 WHERE email = "zzz.lify@icloud.com" LIMIT 1'
+		connection.query(sql, (err, rows) => {
+			if (rows.info) {
+				delete req.session.user.code
+				req.session.user.auth = true
+				req.session.save()
+				res.send({
+					success: true,
+					log: ['ваша почта успешно подтверждена'],
+				})
+			}
+		})
+	} else {
+		res.send({
+			error: ['code'],
+			error_log: ['неверный код'],
+		})
+	}
 })
 
-app.get('/', (req, res) => {
-	res.send('HELLO SUKI')
+app.post('/api/login/', (req, res) => {
+	if (!req.body.email || !req.body.password) {
+		res.send({
+			error: ['email', 'password'],
+			error_log: 'не заполнены обязательные поля',
+		})
+		return 0
+	}
+	let sql = "SELECT * FROM users WHERE email = '" + req.body.email + "'"
+	connection.query(sql, (err, rows) => {
+		if (!!rows[0]) {
+			if (!rows[0].active) {
+				res.send({
+					error: ['active'],
+					error_log: ['подтвердите почту'],
+				})
+			} else if (req.body.password == rows[0].password) {
+				req.session.user.auth = true
+				req.session.save()
+				res.send({
+					success: true,
+					log: ['успешный вход'],
+				})
+			} else {
+				res.send({
+					error: ['password'],
+					error_log: ['неверный пароль'],
+				})
+			}
+		} else {
+			res.send({
+				error: ['email'],
+				error_log: ['нет пользователя с такой почтой'],
+			})
+		}
+	})
+})
+
+app.post('/api/session/', (req, res) => {
+	if (res.session.user.active) {
+		res.send({
+			success: true,
+		})
+	} else {
+		res.send({
+			success: false,
+		})
+	}
 })
 
 app.listen(port, () => {
